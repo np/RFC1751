@@ -1,48 +1,35 @@
 -- | RFC-1751 human-readable 128-bit keys
 module Data.RFC1751
-    ( HumanKey()
-    , humanKey
+    ( keyToMnemonic
+    , mnemonicToKey
     ) where
 
+import Control.Applicative
+import Control.Monad
+
 import Data.Binary
+import Data.ByteString.Lazy (ByteString)
+import qualified Data.ByteString.Lazy as BL
 import Data.Bits
 import Data.Char
 import Data.List
 
-maybeToEither :: b -> Maybe a -> Either b a
-maybeToEither err m = maybe (Left err) Right m
+-- | Decode a mnemonic sentence to a 128-bit key.
+mnemonicToKey :: String -> Maybe ByteString
+mnemonicToKey s = do
+    guard $ length ws == 12
+    BL.concat <$> mapM ((encode <$>) . wordsToKey) [ws1, ws2]
+  where
+    ws = words $ map toUpper s
+    (ws1, ws2) = splitAt 6 ws
 
-assertEither :: e -> Bool -> Either e ()
-assertEither e cond = if cond then Right () else Left e
-
--- | Data type representing 128-bit keys as 12 English words. Use with
--- functions from Data.Binary.
-newtype HumanKey = HumanKey [String] deriving (Eq)
-
-instance Show HumanKey where
-    show (HumanKey ws) = concat $ intersperse " " ws
-
--- | Build a HumanKey instance. Validates input.
-humanKey :: String -> Either String HumanKey
-humanKey s = do
-    let ws = words $ map toUpper s
-    assertEither "Must have 12 words." $ length ws == 12
-    let (ws1, ws2) = splitAt 6 ws
-    _ <- wordsToKey ws1
-    _ <- wordsToKey ws2
-    return $ HumanKey ws
-
-instance Binary HumanKey where
-    put (HumanKey ws) = do
-        let (ws1, ws2) = splitAt 6 ws
-        either fail put $ wordsToKey ws1
-        either fail put $ wordsToKey ws2
-
-    get = do
-        key1 <- get
-        key2 <- get
-        let ws = keyToWords key1 ++ keyToWords key2
-        return $ HumanKey $ ws
+-- | Encode a 128-bit key to a mnemonic sentence.
+keyToMnemonic :: ByteString -> Maybe String
+keyToMnemonic k = do
+    guard $ BL.length k == 16
+    return . unwords . concat $ map (keyToWords . decode) [k1, k2]
+  where
+    (k1, k2) = BL.splitAt 8 k
 
 keyToWords :: Word64 -> [String]
 keyToWords key =
@@ -52,16 +39,16 @@ keyToWords key =
     tempIndices = map (\start -> extract key start 11) [0,11..55]
     indices = init tempIndices ++ [last tempIndices .|. keyCheckSum]
 
-wordsToKey :: [String] -> Either String Word64
+wordsToKey :: [String] -> Maybe Word64
 wordsToKey ws = do
     let findWord w = elemIndex w dict >>= return . fromIntegral
         maybeIndices = sequence $ map findWord ws
-    indices <- maybeToEither "Unknown word." maybeIndices
+    indices <- maybeIndices
     let buildKey acc (bits, index) = (index `shift` bits) .|. acc
         key = foldl buildKey 0 $ zip [53,42..(-2)] indices
         computedSum = checkSum key
         providedSum = last indices .&. 0x03
-    assertEither "Checksum failed." $ providedSum == computedSum
+    guard $ providedSum == computedSum
     return key
 
 checkSum :: Word64 -> Word64

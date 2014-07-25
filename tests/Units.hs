@@ -1,18 +1,19 @@
 module Units (tests) where
 
-import Control.Monad
-import qualified Data.ByteString.Lazy as B
-import qualified Data.ByteString.Lazy.Char8 as C
+import Control.Applicative
+
+import Data.ByteString.Lazy (ByteString)
+import qualified Data.ByteString.Lazy as BL
 import Data.Binary
 import Data.Bits
+import Data.Char
 import Data.List
+import Data.Maybe
 import Numeric
 
-import Test.HUnit ((@=?))
+import Test.HUnit ((@=?), assertBool)
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.HUnit (testCase)
-
-import Data.Maybe
 
 import Data.RFC1751
 
@@ -24,21 +25,21 @@ tests =
         , testGroup "Decode keys in RFC-1751"
             . map decodeTest  $ zip [1..] vectors
         , testGroup "Encode keys in RFC-1751 (lowercase)"
-            . map encodeTest  $ zip [1..] vectorsLc
+            . map encodeTest  $ zip [1..] vectorsLC
         , testGroup "Decode keys in RFC-1751 (lowercase)"
-            . map decodeTest  $ zip [1..] vectorsLc
+            . map decodeTest  $ zip [1..] vectorsLC
         , testGroup "Bad checksums"
             . map badChecksum $ zip [1..] badChecksumVectors
         , testGroup "Bad checksums (lowercase)"
-            . map badChecksum $ zip [1..] badChecksumVectorsLc
+            . map badChecksum $ zip [1..] badChecksumVectorsLC
         , testGroup "Not in dictionary"
             . map notDict $ zip [1..] notDictVectors
         , testGroup "Not in dictionary (lowercase)"
-            . map notDict $ zip [1..] notDictVectorsLc
+            . map notDict $ zip [1..] notDictVectorsLC
         ]
     ]
 
-type TestVector = (C.ByteString, HumanKey)
+type TestVector = (ByteString, String)
 
 badChecksumVectors :: [String]
 badChecksumVectors =
@@ -47,8 +48,8 @@ badChecksumVectors =
     , "BORN ROLL LOVE BEAR AGEE IFFY CUTS MASK MOOD FOWL ROME MIT"
     ]
 
-badChecksumVectorsLc :: [String]
-badChecksumVectorsLc =
+badChecksumVectorsLC :: [String]
+badChecksumVectorsLC =
     [ "rash bush milk look bad a avid gaff bait rot pod love"
     , "tab bore dunk sure cove norm pry if joe myra gwen tent"
     , "born roll love bear agee iffy cuts mask mood fowl rome mit"
@@ -56,7 +57,7 @@ badChecksumVectorsLc =
 
 badChecksum :: (Int, String) -> Test
 badChecksum (i, s) = testCase ("Bad checksum #" ++ show i)
-                              (Left "Checksum failed." @=? humanKey s)
+    (assertBool "bad checksum" . isNothing $ mnemonicToKey s)
 
 notDictVectors :: [String]
 notDictVectors =
@@ -66,8 +67,8 @@ notDictVectors =
     , "TIE OLDY FEEL DOCK EWE PA EMIT HAVE HIS TOTE SWAN KTUH"
     ]
 
-notDictVectorsLc :: [String]
-notDictVectorsLc =
+notDictVectorsLC :: [String]
+notDictVectorsLC =
     [ "phon memo hop nell ret deaf hurt yawn flag mile leo lesk"
     , "jag such per hash full phon dan they cain bond left coca"
     , "tent tier lieu rod urge bowl patk hook flew ely man oak"
@@ -76,62 +77,54 @@ notDictVectorsLc =
 
 notDict :: (Int, String) -> Test
 notDict (i, s) = testCase ("Not in dictionary #" ++ show i)
-                          (Left "Unknown word." @=? humanKey s)
+    (assertBool "wrong word" . isNothing $ mnemonicToKey s)
 
-fromRight :: Either a b -> b
-fromRight (Right b) = b
-fromRight _ = error "Either.fromRight: Left"
-
-integerToBS :: Integer -> C.ByteString
-integerToBS 0 = B.pack [0]
+integerToBS :: Integer -> ByteString
+integerToBS 0 = BL.pack [0]
 integerToBS i 
-    | i > 0     = B.pack $ reverse $ unfoldr f i
+    | i > 0     = BL.pack $ reverse $ unfoldr f i
     | otherwise = error "integerToBS not defined for negative values"
   where 
     f 0 = Nothing
     f x = Just $ (fromInteger x :: Word8, x `shiftR` 8)
 
-hexToBS :: String -> Maybe C.ByteString
+hexToBS :: String -> ByteString
 hexToBS str
-    | null str  = Just C.empty
-    | otherwise = liftM2 C.append (Just z2) r2
+    | null str  = BL.empty
+    | otherwise = BL.append z2 r2
   where 
-    (z,r) = span (== '0') str
-    z2    = B.replicate (fromIntegral $ length z `div` 2) 0
+    (z,r) = span (== '0') $ filter (/= ' ') str
+    z2    = BL.replicate (fromIntegral $ length z `div` 2) 0
     r1    = readHex r
-    r2 | null r    = Just C.empty
-       | null r1   = Nothing
-       | otherwise = Just $ integerToBS $ fst $ head r1
-
-hex2lbs :: String -> C.ByteString
-hex2lbs = fromJust . hexToBS . filter (/=' ')
+    r2 | null r    = BL.empty
+       | null r1   = error $ "cannot read hex"
+       | otherwise = integerToBS $ fst $ head r1
 
 vectors :: [TestVector]
 vectors =
-  [ ( hex2lbs "CCAC 2AED 5910 56BE 4F90 FD44 1C53 4766"
-    , fromRight $
-      humanKey "RASH BUSH MILK LOOK BAD BRIM AVID GAFF BAIT ROT POD LOVE"
+  [ ( hexToBS "CCAC 2AED 5910 56BE 4F90 FD44 1C53 4766"
+    , "RASH BUSH MILK LOOK BAD BRIM AVID GAFF BAIT ROT POD LOVE"
     )
-  , ( hex2lbs "EFF8 1F9B FBC6 5350 920C DD74 16DE 8009"
-    , fromRight $
-      humanKey "TROD MUTE TAIL WARM CHAR KONG HAAG CITY BORE O TEAL AWL"
+  , ( hexToBS "EFF8 1F9B FBC6 5350 920C DD74 16DE 8009"
+    , "TROD MUTE TAIL WARM CHAR KONG HAAG CITY BORE O TEAL AWL"
     )
   ]
 
-vectorsLc :: [TestVector]
-vectorsLc =
-  [ ( hex2lbs "ccac 2aed 5910 56be 4f90 fd44 1c53 4766"
-    , fromRight $
-      humanKey "rash bush milk look bad brim avid gaff bait rot pod love"
+vectorsLC :: [TestVector]
+vectorsLC =
+  [ ( hexToBS "ccac 2aed 5910 56be 4f90 fd44 1c53 4766"
+    , "rash bush milk look bad brim avid gaff bait rot pod love"
     )
-  , ( hex2lbs "eff8 1f9b fbc6 5350 920c dd74 16de 8009"
-    , fromRight $
-      humanKey "trod mute tail warm char kong haag city bore o teal awl"
+  , ( hexToBS "eff8 1f9b fbc6 5350 920c dd74 16de 8009"
+    , "trod mute tail warm char kong haag city bore o teal awl"
     )
   ]
 
 encodeTest :: (Int, TestVector) -> Test
-encodeTest (i, (bs, hk)) = testCase ("Encode #" ++ show i) (bs @=? encode hk)
+encodeTest (i, (bs, m)) = testCase ("Encode #" ++ show i)
+    (bs @=? fromMaybe BL.empty (mnemonicToKey m))
 
 decodeTest :: (Int, TestVector) -> Test
-decodeTest (i, (bs, hk)) = testCase ("Decode #" ++ show i) (hk @=? decode bs)
+decodeTest (i, (bs, hk)) = testCase ("Decode #" ++ show i)
+    (map toLower hk @=? fromMaybe "" (map toLower <$> keyToMnemonic bs))
+
