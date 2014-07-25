@@ -13,6 +13,6 @@ cabal install RFC1751
 ## Functions
 
 ```haskell
-keyToMnemonic  :: ByteString -> Maybe String
-mnemonicToSeed :: String -> Maybe ByteString
+keyToMnemonic :: ByteString -> Maybe String
+mnemonicToKey :: String -> Maybe ByteString
 ```
