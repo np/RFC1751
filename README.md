@@ -6,7 +6,9 @@ that one went on to implement a Bitcoin-specific scheme.
 
 ## Installation
 
+```sh
 cabal install RFC1751
+```
 
 ## Functions
 
