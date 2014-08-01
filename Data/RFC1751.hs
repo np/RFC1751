@@ -8,17 +8,24 @@ import Control.Applicative
 import Control.Monad
 
 import Data.Binary
-import Data.ByteString.Lazy (ByteString)
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import Data.Bits
 import Data.Char
 import Data.List
 
+encodeWord64 :: Word64 -> ByteString
+encodeWord64 = BS.concat . BL.toChunks . encode
+
+decodeWord64 :: ByteString -> Word64
+decodeWord64 = decode . BL.fromChunks . return
+
 -- | Decode a mnemonic sentence to a 128-bit key.
 mnemonicToKey :: String -> Maybe ByteString
 mnemonicToKey s = do
     guard $ length ws == 12
-    BL.concat <$> mapM ((encode <$>) . wordsToKey) [ws1, ws2]
+    BS.concat <$> mapM ((encodeWord64 <$>) . wordsToKey) [ws1, ws2]
   where
     ws = words $ map toUpper s
     (ws1, ws2) = splitAt 6 ws
@@ -26,10 +33,10 @@ mnemonicToKey s = do
 -- | Encode a 128-bit key to a mnemonic sentence.
 keyToMnemonic :: ByteString -> Maybe String
 keyToMnemonic k = do
-    guard $ BL.length k == 16
-    return . unwords . concat $ map (keyToWords . decode) [k1, k2]
+    guard $ BS.length k == 16
+    return . unwords . concat $ map (keyToWords . decodeWord64) [k1, k2]
   where
-    (k1, k2) = BL.splitAt 8 k
+    (k1, k2) = BS.splitAt 8 k
 
 keyToWords :: Word64 -> [String]
 keyToWords key =
@@ -41,7 +48,7 @@ keyToWords key =
 
 wordsToKey :: [String] -> Maybe Word64
 wordsToKey ws = do
-    let findWord w = elemIndex w dict >>= return . fromIntegral
+    let findWord w   = fromIntegral <$> elemIndex w dict
         maybeIndices = sequence $ map findWord ws
     indices <- maybeIndices
     let buildKey acc (bits, index) = (index `shift` bits) .|. acc
