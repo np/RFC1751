@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                RFC1751
-version:             0.2.0.0
+version:             0.3.0.0
 synopsis:            RFC-1751 library for Haskell
 description:         Convert 128-bit ByteString to/from 12 English words.
 homepage:            https://github.com/xenog/RFC1751
